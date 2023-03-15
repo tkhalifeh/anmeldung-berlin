@@ -4,10 +4,26 @@ const Promise = require("bluebird");
 const constants = require("./constants.json");
 const config = require("./config.json");
 
+const Speaker = require('speaker');
+const AudioContext = require('web-audio-api').AudioContext;
+const context = new AudioContext();
+const url = require('url');
+
 (async () => {
   console.log("---- Get an Anmeldung Termin ------");
   console.log("Starting: " + timestamp());
   console.log("Config file:", JSON.stringify(config, null, 2));
+
+  console.log('encoding format : '
+  + context.format.numberOfChannels + ' channels ; '
+  + context.format.bitDepth + ' bits ; '
+  + context.sampleRate + ' Hz');
+
+  context.outStream = new Speaker({
+    channels: context.format.numberOfChannels,
+    bitDepth: context.format.bitDepth,
+    sampleRate: context.sampleRate
+  });
 
   let hasBooked = false;
   while (!hasBooked) {
@@ -54,6 +70,8 @@ async function bookTermin() {
     });
     if (dateURLs.length === 0) return false;
 
+    siren();
+
     // Get all timeslot booking page URLs for each available date in parallel.
     let timeslotURLs = [].concat.apply(
       [],
@@ -76,6 +94,17 @@ async function bookTermin() {
     // If no URLs are available for any dates, go into waiting mode.
     timeslotURLs = filterURLsBetweenTimes(timeslotURLs, config);
     if (timeslotURLs.length === 0) return false;
+
+    fs.readFile(url.pathToFileURL('./siren.wav'), function(err, buffer) {
+      if (err) throw err
+      context.decodeAudioData(buffer, function(audioBuffer) {
+        var bufferNode = context.createBufferSource()
+        bufferNode.connect(context.destination)
+        bufferNode.buffer = audioBuffer
+        bufferNode.loop = true
+        bufferNode.start(0)
+      })
+    });
 
     while (true) {
       // Get the first booking page that renders the input form
@@ -338,4 +367,17 @@ function filterURLsBetweenTimes(urls, { earliestTime, latestTime }) {
 
 function sleep(ms = 120000) {
   return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+function siren(){
+  fs.readFile(url.pathToFileURL('./siren.wav'), function(err, buffer) {
+    if (err) throw err;
+    context.decodeAudioData(buffer, function(audioBuffer) {
+      var bufferNode = context.createBufferSource();
+      bufferNode.connect(context.destination);
+      bufferNode.buffer = audioBuffer;
+      bufferNode.loop = false;
+      bufferNode.start(0);
+    })
+  });
 }
